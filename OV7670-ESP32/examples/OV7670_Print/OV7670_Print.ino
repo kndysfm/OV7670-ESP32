@@ -16,6 +16,7 @@
 #include "hwcrypto/sha.h"
 #include "base64.h"
 #include <OV7670.h>
+#include <Adafruit_Thermal.h>
 
 IPAddress myIP 			= IPAddress(192,168,1,99);	// 固定IPアドレス
 IPAddress myGateway = IPAddress(192,168,1, 1);
@@ -368,6 +369,132 @@ void WS_sendImg(uint16_t lineNo)
 	}
 }
 
+// Settings for Adafruit Thermal Printer ---------------------------------
+//  copied from Example code
+
+// Here's the new syntax when using SoftwareSerial (e.g. Arduino Uno) ----
+// If using hardware serial instead, comment out or remove these lines:
+
+//#include "SoftwareSerial.h"
+//#define TX_PIN 23 // Arduino transmit  YELLOW WIRE  labeled RX on printer
+//#define RX_PIN 22 // Arduino receive   GREEN WIRE   labeled TX on printer
+
+//SoftwareSerial mySerial(RX_PIN, TX_PIN); // Declare SoftwareSerial obj first
+//Adafruit_Thermal printer(&mySerial, 21);     // Pass addr to printer constructor
+// Then see setup() function regarding serial & printer begin() calls.
+
+// Here's the syntax for hardware serial (e.g. Arduino Due) --------------
+// Un-comment the following line if using hardware serial:
+
+HardwareSerial mySerial(2);
+Adafruit_Thermal printer(&mySerial, 5);      // Or Serial2, Serial3, etc.
+
+// -----------------------------------------------------------------------
+
+#define SHUTTER_PIN 23
+
+void setup_printer() {
+  // This line is for compatibility with the Adafruit IotP project pack,
+  // which uses pin 7 as a spare grounding point.  You only need this if
+  // wired up the same way (w/3-pin header into pins 5/6/7):
+  //pinMode(7, OUTPUT); digitalWrite(7, LOW);
+
+  // NOTE: SOME PRINTERS NEED 9600 BAUD instead of 19200, check test page.
+  mySerial.begin(9600);  // Initialize SoftwareSerial
+  //Serial1.begin(19200); // Use this instead if using hardware serial
+  printer.begin(200);        // Init printer (same regardless of serial type)
+
+  // The following calls are in setup(), but don't *need* to be.  Use them
+  // anywhere!  They're just here so they run one time and are not printed
+  // over and over (which would happen if they were in loop() instead).
+  // Some functions will feed a line when called, this is normal.
+
+  printer.sleep();      // Tell printer to sleep
+
+  pinMode(SHUTTER_PIN, INPUT);
+}
+
+void print_bitmap(int width, int height, const uint8_t *data) {
+  printer.wake();       // MUST wake() before printing again, even if reset
+  printer.printBitmap(width, height, data);
+  printer.feed(2);
+  printer.sleep();      // Tell printer to sleep
+}
+
+// -----------------------------------------------------------------------
+
+#define PRINT_MAX_WIDTH (384)
+#define PRINT_MAX_HEIGHT (384)
+
+static uint8_t bmp_data[((PRINT_MAX_WIDTH+7)/8)*PRINT_MAX_HEIGHT];
+static int dither_buffer[2][PRINT_MAX_WIDTH+4];
+
+void clear_bmp_data() {
+  memset(bmp_data, 0, sizeof(bmp_data));
+  memset(dither_buffer, 0, sizeof(dither_buffer));
+}
+
+#define PRINT_WIDTH (CAM_WIDTH < PRINT_MAX_WIDTH+4? CAM_WIDTH - 4: PRINT_MAX_WIDTH)
+#define PRINT_BYTE_WIDTH ((PRINT_WIDTH+7)/8)
+#define PRINT_HEIGHT (CAM_HEIGHT < PRINT_MAX_HEIGHT+1? CAM_HEIGHT-1: PRINT_MAX_HEIGHT)
+
+void convert_bmp_data(){
+  uint8_t buf[(CAM_WIDTH + 2) * 2];
+  int dx = CAM_WIDTH > PRINT_WIDTH? (CAM_WIDTH - PRINT_WIDTH + 1) / 2: 0;
+  int dy = CAM_HEIGHT > PRINT_HEIGHT? (CAM_HEIGHT - PRINT_HEIGHT + 1) / 2: 0;
+
+  clear_bmp_data();
+  int flip_buffer = 0; // boolean
+  uint8_t * bmp_pos = bmp_data;
+  uint8_t * bmp_row = bmp_data;
+  for (int y = 0; y < PRINT_HEIGHT; y++) {
+    cam.getLines( y+dy , buf, 1); 
+    memset(&dither_buffer[flip_buffer^1], 0, PRINT_MAX_WIDTH*sizeof(int));
+    uint8_t b = 0x80;
+    bmp_pos = bmp_row;
+    for (int x = 0; x < PRINT_WIDTH; x++) {
+      int * curr_line = &dither_buffer[flip_buffer][x];
+      int * next_line = &dither_buffer[flip_buffer^1][x];
+      int val = buf[2*(x+dx) + 1]; // use only Y values
+      val += curr_line[0];
+      int e, e2, e3, e4;
+      if (val < 128) { // Black
+        *bmp_pos |= b;
+        e = val - 0; 
+      } else { // White
+        e = val - 255;
+      }
+      e2 = (e + 2) >> 2;
+      e3 = (e + 4) >> 3;
+      e4 = (e + 8) >> 4;
+      curr_line[+1] += e2;
+      curr_line[+2] += e3;
+      next_line[-2] += e4;
+      next_line[-1] += e3;
+      next_line[+0] += e2;
+      next_line[+1] += e3;
+      next_line[+2] += e4;
+      if (b == 1) {
+        b = 0x80;
+        bmp_pos++;
+      } else {
+        b >>= 1;
+      }
+    }
+    flip_buffer ^= 1;
+    bmp_row += PRINT_BYTE_WIDTH;
+  }
+}
+
+bool print_loop(){
+  if (digitalRead(SHUTTER_PIN) == LOW) {
+    convert_bmp_data();
+    print_bitmap(PRINT_WIDTH, PRINT_HEIGHT, bmp_data);
+  }
+}
+
+// -----------------------------------------------------------------------
+
 void setup() {
   Serial.begin(115200);
   Serial.println(F("OV7670 Web")); 
@@ -392,6 +519,7 @@ void setup() {
   
 //	cam.colorbar(true);
   Serial.println(F("---- cam init done ----"));
+  //setup_printer();
 }
 
 void loop(void) {
@@ -401,6 +529,7 @@ void loop(void) {
 	setImgHeader( CAM_WIDTH, dy );			// Websocket用ヘッダを用意
 
 	while(1){
+    //print_loop();
 		for( y = 0; y < CAM_HEIGHT; y += dy){			
 			cam.getLines( y+1 , &WScamData[6] , dy);	// カメラから dyライン分得る。LineNo(top:1)
 			if(WS_on){
