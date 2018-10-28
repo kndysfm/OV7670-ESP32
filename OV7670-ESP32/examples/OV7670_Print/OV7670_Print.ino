@@ -193,9 +193,9 @@ const char *html_script = ""
 	"		var base = 0;\n"
 	"		for(var x = 0; x < width; x += 1){\n"
   "			var c = 1 + x + y * width;\n"   		
-  "			pixels[base+0] = (buf[c] & 0xf800) >> 8 | (buf[c] & 0xe000) >> 13;\n"			// Red
-  "			pixels[base+1] = (buf[c] & 0x07e0) >> 3 | (buf[c] & 0x0600) >> 9;\n"			// Green
-  "			pixels[base+2] = (buf[c] & 0x001f) << 3 | (buf[c] & 0x001c) >> 2;\n"			// Blue
+  "			pixels[base+0] = buf[c] >> 8;\n"			// Red
+  "			pixels[base+1] = buf[c] >> 8;\n"			// Green
+  "			pixels[base+2] = buf[c] >> 8;\n"			// Blue
   "			pixels[base+3] = 255;\n" 	// Alpha
 	"			base += 4;\n"
   "		}\n"
@@ -379,7 +379,7 @@ void setup() {
 			server.begin();			// クライアントの接続待ち状態にする
  	}
   Serial.println(F("---- cam init ----")); 	
-  esp_err_t err = cam.init(&cam_conf, CAM_RES, RGB565);		// カメラを初期化
+  esp_err_t err = cam.init(&cam_conf, CAM_RES, YUV422);		// カメラを初期化
 	if(err != ESP_OK){
 		Serial.println(F("cam.init ERROR"));
 		while(1);
