@@ -44,10 +44,10 @@ const camera_config_t cam_conf = {
 //	HREF		--> NC
 
 //********* カメラ解像度指定 ***************
-//#define CAM_RES			VGA			// カメラ解像度
-//#define CAM_WIDTH		640			// カメラ幅
-//#define CAM_HEIGHT	480			// カメラ高さ
-//#define CAM_DIV			 12			// １画面分割数
+#define CAM_RES			VGA			// カメラ解像度
+#define CAM_WIDTH		640			// カメラ幅
+#define CAM_HEIGHT	480			// カメラ高さ
+#define CAM_DIV			 12			// １画面分割数
 
 //#define CAM_RES			CIF			// カメラ解像度
 //#define CAM_WIDTH		352			// カメラ幅
@@ -59,10 +59,10 @@ const camera_config_t cam_conf = {
 //#define CAM_HEIGHT	240			// カメラ高さ
 //#define CAM_DIV				3			// １画面分割数
 
-#define CAM_RES			QCIF		// カメラ解像度
-#define CAM_WIDTH		176			// カメラ幅
-#define CAM_HEIGHT	144			// カメラ高さ
-#define CAM_DIV				1			// １画面分割数
+//#define CAM_RES			QCIF		// カメラ解像度
+//#define CAM_WIDTH		176			// カメラ幅
+//#define CAM_HEIGHT	144			// カメラ高さ
+//#define CAM_DIV				1			// １画面分割数
 
 //#define CAM_RES			QQVGA		// カメラ解像度
 //#define CAM_WIDTH		160			// カメラ幅
