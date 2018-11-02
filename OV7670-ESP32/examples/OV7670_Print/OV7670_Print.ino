@@ -411,7 +411,7 @@ void setup_printer() {
 
   printer.sleep();      // Tell printer to sleep
 
-  pinMode(SHUTTER_PIN, INPUT);
+  pinMode(SHUTTER_PIN, INPUT_PULLUP);
 }
 
 void print_bitmap(int width, int height, const uint8_t *data) {
