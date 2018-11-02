@@ -33,6 +33,7 @@ const camera_config_t cam_conf = {
 	.XCLK = 15,		// 27 にすると何故かWiFiが動かなくなる。
 	.PCLK = 14,
 	.VSYNC = 13,
+  .HREF = 12,
 	.xclk_freq_hz = 10000000,			// XCLK 10MHz
 	.ledc_timer		= LEDC_TIMER_0,
 	.ledc_channel = LEDC_CHANNEL_0	

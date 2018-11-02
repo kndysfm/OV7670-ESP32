@@ -147,6 +147,7 @@ static void i2s_init()
 		s_config.D7,
 		s_config.PCLK,
 		s_config.VSYNC,
+    s_config.HREF,
 	};
 
 	gpio_config_t conf = {
@@ -176,9 +177,18 @@ static void i2s_init()
 	gpio_matrix_in(s_config.D5,		I2S0I_DATA_IN5_IDX, false);
 	gpio_matrix_in(s_config.D6,		I2S0I_DATA_IN6_IDX, false);
 	gpio_matrix_in(s_config.D7,		I2S0I_DATA_IN7_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN8_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN9_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN10_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN11_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN12_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN13_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN14_IDX, false);
+  gpio_matrix_in(0x30,          I2S0I_DATA_IN15_IDX, false);
 	gpio_matrix_in(s_config.VSYNC,	I2S0I_V_SYNC_IDX,	false);		// VSYNC は　ネガティブ　にしておくこと
-	gpio_matrix_in(0x38,			I2S0I_H_SYNC_IDX,	false);		// 0x38 is Allways hight (0x30 is Allways low)
-	gpio_matrix_in(0x38,			I2S0I_H_ENABLE_IDX, false);		// HREF は　見ない
+	gpio_matrix_in(0x38,			    I2S0I_H_SYNC_IDX,	false);		// 0x38 is Allways hight (0x30 is Allways low)
+	// gpio_matrix_in(s_config.HREF,	I2S0I_H_ENABLE_IDX, false);		
+	gpio_matrix_in(0x38,	I2S0I_H_ENABLE_IDX, false);		
 	gpio_matrix_in(s_config.PCLK,	I2S0I_WS_IN_IDX,	false);		// PCLK は　HREF が　ON　の時のみ有効にすること
 
 	// Enable and configure I2S peripheral
