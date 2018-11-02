@@ -448,7 +448,7 @@ void convert_bmp_data(){
   uint8_t * bmp_pos = bmp_data;
   uint8_t * bmp_row = bmp_data;
   for (int y = 0; y < PRINT_HEIGHT; y++) {
-    cam.getLines( y+dy , buf, 1); 
+    cam.getLines( y+dy+1 , buf, 1); 
     memset(&dither_buffer[flip_buffer^1], 0, PRINT_MAX_WIDTH*sizeof(int));
     uint8_t b = 0x80;
     bmp_pos = bmp_row;
