@@ -491,21 +491,27 @@ bool print_loop(){
   if (digitalRead(SHUTTER_PIN) == LOW) {
     convert_bmp_data();
     print_bitmap(PRINT_WIDTH, PRINT_HEIGHT, bmp_data);
+    return true;
   }
+  return false;
 }
 
 // -----------------------------------------------------------------------
+#define ENABLE_WEB_SERVER (1)
 
 void setup() {
   Serial.begin(115200);
   Serial.println(F("OV7670 Web")); 
 	Wire.begin();
-	Wire.setClock(400000);
+	Wire.setClock(333333);//400000);
+  delay(1000);
 
 	WS_on = false;
+#if ENABLE_WEB_SERVER
  	if(wifi_connect()){ 
 			server.begin();			// クライアントの接続待ち状態にする
  	}
+#endif
   Serial.println(F("---- cam init ----")); 	
   esp_err_t err = cam.init(&cam_conf, CAM_RES, YUV422);		// カメラを初期化
 	if(err != ESP_OK){
@@ -513,25 +519,27 @@ void setup() {
 		while(1);
 	}
 //	cam.setPCLK(2, DBLV_CLK_x4);					// PCLK = 10MHz / (pre+1) * 4 Hz  13.3MHz
-	cam.vflip( false );		// 画面１８０度回転
+//	cam.vflip( false );		// 画面１８０度回転
 	 
   Serial.printf("cam MID = %X\n\r",cam.getMID());
   Serial.printf("cam PID = %X\n\r",cam.getPID());
   
 //	cam.colorbar(true);
   Serial.println(F("---- cam init done ----"));
-  //setup_printer();
+  setup_printer();
 }
 
 void loop(void) {
 	uint16_t y,dy;
 	
 	dy = CAM_HEIGHT / CAM_DIV;					// １度に送るライン数
+#if ENABLE_WEB_SERVER
 	setImgHeader( CAM_WIDTH, dy );			// Websocket用ヘッダを用意
-
+#endif
 	while(1){
-    //print_loop();
-		for( y = 0; y < CAM_HEIGHT; y += dy){			
+#if ENABLE_WEB_SERVER
+		for( y = 0; y < CAM_HEIGHT; y += dy){
+      if (print_loop()) break;			
 			cam.getLines( y+1 , &WScamData[6] , dy);	// カメラから dyライン分得る。LineNo(top:1)
 			if(WS_on){
 				if(WSclient){
@@ -546,8 +554,13 @@ void loop(void) {
 		}
 	  if(!WS_on){
   	  Ini_HTTP_Response();
+  	} else {
+      delay(1000);
   	}
+#else
+    print_loop();
+    delay(100);
+#endif
 	}
 	free(WScamData);
 }
-
