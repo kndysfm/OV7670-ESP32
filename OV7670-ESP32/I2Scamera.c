@@ -26,7 +26,7 @@ static volatile int s_fb_idx = 0;
 static bool s_initialized = false;
 static int s_buf_line_width;
 static int s_buf_height;
-static volatile int s_line_count = 0;
+static volatile int s_line_count_dma = 0, s_line_count_rdy = 0;
 static volatile int s_cur_buffer = 0;
 static volatile bool s_i2s_running = false;
 static SemaphoreHandle_t s_data_ready;
@@ -48,6 +48,8 @@ static void IRAM_ATTR VSYNC_isr( void *arg );
 static void IRAM_ATTR VSYNC_isr( void *arg )
 {
 //	uint32_t gpio_num = (uint32_t)arg;
+  GPIO.status1_w1tc.val = GPIO.status1.val;
+  GPIO.status_w1tc = GPIO.status;
 	if( vsync_check ){
 		BaseType_t xHigherPriorityTaskWoken;// = pdFALSE;
 		xSemaphoreGiveFromISR( s_vsync_catch, &xHigherPriorityTaskWoken);
@@ -64,7 +66,7 @@ esp_err_t I2S_camera_init(camera_config_t* config)
 
 	for(int i = 0; i < 2; i++){
 		if( s_fb[i] != NULL) free( s_fb[i] );
-		s_fb[i] = (uint8_t*)malloc(s_buf_line_width);
+		s_fb[i] = (uint8_t*)malloc(s_buf_line_width+8);
 		if (s_fb[i] == NULL) {
 			ESP_LOGE(TAG, "Failed to allocate frame buffer");
 			return ESP_ERR_NO_MEM;
@@ -97,9 +99,11 @@ esp_err_t I2S_camera_init(camera_config_t* config)
 static void i2s_frameReadStart(void)
 {
 	xSemaphoreTake( s_vsync_catch, portMAX_DELAY);		// VSYNC wait
+  
 	vsync_check = false;
 	s_cur_buffer = 0;
-	s_line_count = 0;
+	s_line_count_dma = 0;
+	s_line_count_rdy = 0;
 	s_i2s_running = true;
 	i2s_readStart(s_cur_buffer);	// start RX
 }
@@ -109,21 +113,26 @@ uint16_t* camera_getLine(uint16_t lineno)
 	if (!s_initialized) {
 		return NULL;
 	}
-	unsigned long time = millis();;
+    
+	unsigned long time = millis();
 	do{
 		if(!s_i2s_running){
 			vsync_check = true;
 			i2s_frameReadStart();
 		}
 		xSemaphoreTake(s_line_ready, portMAX_DELAY);
-		if( millis() - time > 1000 ) return NULL;
-	}while(lineno != s_line_count);
+		//if( millis() - time > 1000 ) return NULL;
+	}while(lineno != s_line_count_rdy);
 
 	return (uint16_t*)s_fb[s_fb_idx];
 }
 
 static inline void i2s_conf_reset()
 {
+  const uint32_t lc_conf_reset_flags = I2S_IN_RST_M | I2S_AHBM_RST_M | I2S_AHBM_FIFO_RST_M;
+  I2S0.lc_conf.val |= lc_conf_reset_flags;
+  I2S0.lc_conf.val &= ~lc_conf_reset_flags;
+  
 	const uint32_t conf_reset_flags = I2S_RX_RESET_M | I2S_RX_FIFO_RESET_M | I2S_TX_RESET_M | I2S_TX_FIFO_RESET_M;
 	I2S0.conf.val |= conf_reset_flags;
 	I2S0.conf.val &= ~conf_reset_flags;
@@ -158,13 +167,13 @@ static void i2s_init()
 		.intr_type	  = GPIO_INTR_DISABLE
 	};
 
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < sizeof(pins)/sizeof(gpio_num_t); ++i) {
 		conf.pin_bit_mask = 1LL << pins[i];
 		gpio_config(&conf);
 	}
 
 	// VSYNC Interrupt Enable
-	gpio_set_intr_type( s_config.VSYNC, GPIO_INTR_NEGEDGE );
+	gpio_set_intr_type( s_config.VSYNC, GPIO_INTR_POSEDGE );
 	gpio_install_isr_service( 0 );
 	gpio_isr_handler_add( s_config.VSYNC, VSYNC_isr, (void*)s_config.VSYNC );
 
@@ -195,11 +204,6 @@ static void i2s_init()
 	periph_module_enable(PERIPH_I2S0_MODULE);	// I2S0 enable
 
 	// Toggle some reset bits in LC_CONF register
-	const uint32_t lc_conf_reset_flags = I2S_IN_RST_S | I2S_AHBM_RST_S | I2S_AHBM_FIFO_RST_S;
-
-	I2S0.lc_conf.val |= lc_conf_reset_flags;
-	I2S0.lc_conf.val &= ~lc_conf_reset_flags;
-	
 	// Toggle some reset bits in CONF register
 	i2s_conf_reset();
 	// Enable slave mode (sampling clock is external)
@@ -241,7 +245,8 @@ static void i2s_readStart(int index)
 	I2S0.in_link.addr = (uint32_t) &s_dma_desc[index];
 	I2S0.in_link.start = 1;
 	I2S0.int_clr.val = I2S0.int_raw.val;
-	I2S0.int_ena.in_done = 1;		// DMA interrupt Enable when the current txlink descriptor is handled
+	I2S0.int_ena.val = 0;
+  I2S0.int_ena.in_done = 1;		// DMA interrupt Enable when the current txlink descriptor is handled
 
 	esp_intr_enable(s_i2s_intr_handle);
 	I2S0.conf.rx_start = 1;			// receive Start
@@ -259,7 +264,7 @@ static void i2s_stop()
 //-------------------------------------------------
 esp_err_t  dma_desc_init(void)
 {
-	size_t buf_size = s_buf_line_width * 2;	// 2byte --> 32bit(4bytes)
+	size_t buf_size = s_config.frame_width * 4;	// 2byte --> 32bit(4bytes)
 
 	for (int i = 0; i < 2; ++i) {
 		s_dma_buf[i] = (uint32_t*) malloc(buf_size);
@@ -276,6 +281,8 @@ esp_err_t  dma_desc_init(void)
 		s_dma_desc[i].eof = 1;
 		s_dma_desc[i].qe.stqe_next = NULL;
 	}
+  s_dma_desc[0].qe.stqe_next = &s_dma_desc[1];
+  s_dma_desc[1].qe.stqe_next = &s_dma_desc[0];
 	return ESP_OK;
 }
 
@@ -284,23 +291,25 @@ esp_err_t  dma_desc_init(void)
 static void line_filter_task(void *pvParameters)
 {
 	while (true) {
-		gpio_set_level( 2, 1);	// 2 = LED pin
+		//gpio_set_level( 2, 1);	// 2 = LED pin
 
 		xSemaphoreTake(s_data_ready, portMAX_DELAY);
 		int buf_idx = !s_cur_buffer;
 
-		gpio_set_level( 2, 0);	// 2 = LED pin
+		//gpio_set_level( 2, 0);	// 2 = LED pin
 
 		s_fb_idx = (s_fb_idx + 1) % 1;
 		uint8_t* pfb = s_fb[s_fb_idx];
 		const uint32_t* buf = s_dma_buf[buf_idx];
 
-		for (int i = 0; i < s_buf_line_width/2; ++i) {
-			uint32_t v = *buf++;	// Get 32 bit from DMA buffer
+    int len = s_config.frame_width;
+		for (int i = 0; i < len; ++i) {
+			uint8_t *v = (uint8_t*)buf++;	// Get 32 bit from DMA buffer
 			// 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
-			*pfb++ = (uint8_t)(v & 0x000000ff);
-			*pfb++ = (uint8_t)((v & 0x00ff0000)>>16);
+			*pfb++ = v[0];
+			*pfb++ = v[2];
 		}
+    ++s_line_count_rdy;
 		xSemaphoreGive(s_line_ready);
 	}
 }
@@ -311,11 +320,12 @@ static void IRAM_ATTR i2s_isr(void* arg)	// 1 Line read done
 	I2S0.int_clr.val = I2S0.int_raw.val;
 
 	s_cur_buffer = !s_cur_buffer;
-	++s_line_count;
-	if(s_line_count == s_buf_height) {		// 1 Frame read done
+	++s_line_count_dma;
+
+	if(s_line_count_dma == s_buf_height) {		// 1 Frame read done
 		i2s_stop();
 	} else {
-		i2s_readStart(s_cur_buffer);
+		//i2s_readStart(s_cur_buffer);
 	}
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	xSemaphoreGiveFromISR(s_data_ready, &xHigherPriorityTaskWoken);
